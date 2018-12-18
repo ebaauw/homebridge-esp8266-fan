@@ -33,14 +33,14 @@ Ticker ITHOticker;
 WebSocketsServer webSocket = WebSocketsServer(81);
 
 // This constant is used to filter out RFT device packets, only the packets with this ID are listened to.
-const uint8_t RFTid[] = {0x66, 0xa9, 0x6b, 0xa5, 0xa9, 0xa9, 0x9a, 0x56}; 
+const uint8_t RFTid[] = {0x66, 0xa9, 0x6a, 0xa5, 0xa9, 0xa9, 0x9a, 0x56}; 
 
 // Replace with your network credentials
-const char* ssid = "***** your SSID here *****";
-const char* password = "**** your password here *****";
+const char* ssid = "*** fill in your own SSID ***";
+const char* password = "*********";
 
 // Hostname
-const char* accessoryName = "ESPFanController";
+const char* accessoryName = "ESPFanController2";
 
 /* change the value of repeater to true if repeater functionality is required */
 bool repeater = false;
@@ -84,11 +84,14 @@ const int ON = LOW;
 unsigned long prevMillLedSta = 0;
 const unsigned long flashIntervalMillis = 20;
 
+//variables for low speed setting timeout after number of millies power settings return to off
+unsigned long prevMillStaChg = 0;
+const unsigned long lowSpeedSettingTimeout = 11000;
+
 void adjustSpeed(int value) {
   if (value < 34) {
-    // set low
-    setSpeedSetting("low");
-    
+    // set off
+    setSpeedSetting("low");  
     if (serialMon) Serial.printf("Speed set to %d. Setting to low\n", value);
   } else if (value < 67) {
     // set medium
@@ -96,7 +99,7 @@ void adjustSpeed(int value) {
     if (serialMon) Serial.printf("Speed set to %d. Setting to medium\n", value);
   } else if (value < 101) {
     // set high
-    setSpeedSetting("max");
+    setSpeedSetting("high");
     if (serialMon) Serial.printf("Speed set to %d. Setting to high\n", value);
   } else {
     // invalid value - turn off
@@ -158,6 +161,19 @@ void led() {
   digitalWrite(LED_BUILTIN, LedState);
 }
 
+void staChgTimeout() {
+  unsigned long currentMillis = millis();
+  if ((prevMillStaChg == 0) && (currentState == "low")) prevMillStaChg = millis();
+  else if ((currentMillis - prevMillStaChg) > lowSpeedSettingTimeout) {
+    if ((currentState == "low") && (currentSpeed < 34)) {
+      currentSpeed = 0;
+      currentState = "off";
+      prevMillStaChg = 0;
+      sendUpdate();
+    } else prevMillStaChg = 0;   
+  }
+}
+
 void repeatReceivedPacketCommand() {
   ITHOhasPacket = false;
   uint8_t goodpos = findRFTlastCommand();
@@ -210,11 +226,11 @@ void sendUpdate() {
 void setSpeedSetting(String setting) {
   if (setting != currentState) {
     currentState = setting;
-    if (setting == "low"|| setting == "off") sendLowSpeed();
+    if (setting == "low") sendLowSpeed();
     else if (setting == "med") sendMediumSpeed();
-    else if (setting == "max" || setting == "high") sendHighSpeed();
+    else if (setting == "high") sendHighSpeed();
+    sendUpdate();
   }
-  sendUpdate();
 }
 
 void updateCurrentStateFromRFCommand() {
@@ -224,7 +240,7 @@ void updateCurrentStateFromRFCommand() {
   else                RFTlastCommand = IthoUnknown;
   switch (RFTlastCommand) {
     case IthoLow:
-      currentState = "off";
+      currentState = "low";
       currentSpeed = 0;
       sendUpdate();
       break;
@@ -310,11 +326,15 @@ void showPacket() {
 }
 
 void togglePower(bool value) {
-  if (value) adjustSpeed(currentSpeed);
+  if (value && (currentSpeed == 0)) {
+    currentSpeed = 100;
+    adjustSpeed(currentSpeed);
+  }
+  else if (value) adjustSpeed(currentSpeed);
   else {
-    if (serialMon) Serial.println("Toggle Power to off\r\n");
+    if (serialMon) Serial.println("Toggle Power to low\r\n");
     currentSpeed = 0;
-    setSpeedSetting("off");
+    setSpeedSetting("low");
   }
 }
 
@@ -333,12 +353,12 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length
       DynamicJsonBuffer jsonBuffer;
       JsonObject& root = jsonBuffer.parseObject((char *)&payload[0]);
 
+      if (root.containsKey("speed") && currentState != "off") currentSpeed = root["speed"];
       if (root.containsKey("power")) togglePower(root["power"]);
       else if (root.containsKey("speed")) {
         currentSpeed = root["speed"];
         adjustSpeed(root["speed"]);
       }
-
       break;
     }
     case WStype_BIN:
@@ -419,5 +439,6 @@ void loop(void) {
     if (serialMon) showPacket();
     if(repeater) repeatReceivedPacketCommand();
   }
+  staChgTimeout();
   yield();
 }
