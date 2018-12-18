@@ -1,6 +1,6 @@
 /*
    I slapped a lot of code of Klusjesman, supersjimmie and OZNU together
-   and reused the best pieces.
+   and reused the that I needed.
 
    This sketch is build to create a standard interface exposed on local network
    and can utilize a CC2201 to send RF signals to an Itho ECO CVE
@@ -32,36 +32,41 @@ IthoPacket packet;
 Ticker ITHOticker;
 WebSocketsServer webSocket = WebSocketsServer(81);
 
-// This constant is used to filter out other RFT device packets and to send packets with
-// Use Serial.println("ID of sender: " + rf.getLastIDstr()); to find the sender ID of your RFT device
-const uint8_t RFTid[] = {0x66, 0xa9, 0x6a, 0xa5, 0xa9, 0xa9, 0x9a, 0x56}; 
+// This constant is used to filter out RFT device packets, only the packets with this ID are listened to.
+const uint8_t RFTid[] = {0x66, 0xa9, 0x6b, 0xa5, 0xa9, 0xa9, 0x9a, 0x56}; 
 
 // Replace with your network credentials
-const char* ssid = "***************";
-const char* password = "***************";
+const char* ssid = "***** your SSID here *****";
+const char* password = "**** your password here *****";
 
 // Hostname
 const char* accessoryName = "ESPFanController";
 
-// Pins
-const int POWER_PIN = 2;
-const int SPEED_LOW_PIN = 0;
-const int SPEED_MED_PIN = 4;
-const int SPEED_MAX_PIN = 5;
+/* change the value of repeater to true if repeater functionality is required */
+bool repeater = false;
 
-#define STATE_OFF       HIGH
-#define STATE_ON        LOW
+/* change the value of showEveryPacket to true if you want to see every received packet in the Serial Monitor. For instance to find the ID of your remote*/
+bool showEveryPacket = false;
+
+/* Led on or Off to use the builtin Led */
+bool ledOn = false;
+
+/* turn serial monitor on / off */
+bool serialMon = true;
+
+// Pins
 #define ITHO_IRQ_PIN D2
 
+// Custom statuses
+#define STATE_OFF       HIGH
+#define STATE_ON        LOW
+
+// Current accessory/button status 
 String currentState = "off";
 int currentSpeed = 0;
 
-/* change the value of repeater to true if repeater functionality is required, 
- * you can also change this value by navigating to http://xxx.xxx.xxx.xxx/repeater?value=true */
-bool repeater = false;
-
 // ITHO related matter
-bool ITHOhasPacket = false;
+volatile bool ITHOhasPacket = false;
 bool RFTrepeater = false;
 IthoCommand RFTcommand[3] = {IthoLow, IthoMedium, IthoHigh};
 byte RFTRSSI[3] = {0, 0, 0};
@@ -72,11 +77,11 @@ IthoCommand savedRFTstate = IthoUnknown;
 bool RFTidChk[3] = {false, false, false};
 
 // variables for the led flashing
-int LedFlashTimes = 0;
+volatile int LedFlashTimes = 0;
 int LedState = HIGH; //means off
 const int OFF = HIGH;
 const int ON = LOW;
-unsigned long previousMillisLedStateChange = 0;
+unsigned long prevMillLedSta = 0;
 const unsigned long flashIntervalMillis = 20;
 
 void adjustSpeed(int value) {
@@ -84,19 +89,19 @@ void adjustSpeed(int value) {
     // set low
     setSpeedSetting("low");
     
-    Serial.printf("Speed set to %d. Setting to low\n", value);
+    if (serialMon) Serial.printf("Speed set to %d. Setting to low\n", value);
   } else if (value < 67) {
     // set medium
     setSpeedSetting("med");
-    Serial.printf("Speed set to %d. Setting to medium\n", value);
+    if (serialMon) Serial.printf("Speed set to %d. Setting to medium\n", value);
   } else if (value < 101) {
     // set high
     setSpeedSetting("max");
-    Serial.printf("Speed set to %d. Setting to high\n", value);
+    if (serialMon) Serial.printf("Speed set to %d. Setting to high\n", value);
   } else {
     // invalid value - turn off
     togglePower(false);
-    Serial.printf("Speed set to %d. Invalid Speed. Turning off.\n", value);
+    if (serialMon) Serial.printf("Speed set to %d. Invalid Speed. Turning off.\n", value);
   }
 }
 
@@ -112,7 +117,7 @@ uint8_t findRFTlastCommand() {
 }
 
 void flashLed(int times){
-  LedFlashTimes += times;
+  if (ledOn) LedFlashTimes += times;
 }
 
 void ITHOcheck() {
@@ -122,9 +127,12 @@ void ITHOcheck() {
     if (++RFTcommandpos > 2) RFTcommandpos = 0;  // store information in next entry of ringbuffers
     RFTcommand[RFTcommandpos] = cmd;
     RFTRSSI[RFTcommandpos]    = rf.ReadRSSI();
-    bool chk = rf.checkID(RFTid);
+    bool chk;
+    //if (showEveryPacket) chk = true;
+    //else chk = rf.checkID(RFTid);
+    chk = rf.checkID(RFTid);
     RFTidChk[RFTcommandpos]   = chk;
-    if ((cmd != IthoUnknown) && chk) {  // only act on good cmd and correct RFTid.
+    if (((cmd != IthoUnknown) && chk) || showEveryPacket) {  // only act on good cmd and correct RFTid.
       ITHOhasPacket = true;
     }
   }
@@ -134,18 +142,17 @@ void ITHOinterrupt() {
   ITHOticker.once_ms(10, ITHOcheck);
 }
 
-void ledState() {
+void led() {
   unsigned long currentMillis = millis();
-  if ((LedFlashTimes == 0) && (LedState == ON) && ((currentMillis - previousMillisLedStateChange) > flashIntervalMillis)) {
-    previousMillisLedStateChange = currentMillis;
+  if ((LedFlashTimes == 0) && (LedState == ON) && ((currentMillis - prevMillLedSta) > flashIntervalMillis)) {
+    prevMillLedSta = currentMillis;
     LedState = OFF;
-  } else if ((LedFlashTimes > 0) && (LedState == OFF) && ((currentMillis - previousMillisLedStateChange) > flashIntervalMillis)) {
+  } else if ((LedFlashTimes > 0) && (LedState == OFF) && ((currentMillis - prevMillLedSta) > flashIntervalMillis)) {
     LedFlashTimes--;
-    previousMillisLedStateChange = currentMillis;
+    prevMillLedSta = currentMillis;
     LedState = ON;
-  } 
-  else if ((LedFlashTimes > 0) && (LedState == ON) && ((currentMillis - previousMillisLedStateChange) > flashIntervalMillis)) {
-    previousMillisLedStateChange = currentMillis;
+  } else if ((LedFlashTimes > 0) && (LedState == ON) && ((currentMillis - prevMillLedSta) > flashIntervalMillis)) {
+    prevMillLedSta = currentMillis;
     LedState = OFF;
   } 
   digitalWrite(LED_BUILTIN, LedState);
@@ -156,28 +163,28 @@ void repeatReceivedPacketCommand() {
   uint8_t goodpos = findRFTlastCommand();
   if (goodpos != -1)  RFTlastCommand = RFTcommand[goodpos];
   else                RFTlastCommand = IthoUnknown;
-  Serial.print("Repeating command: [");
-  Serial.print(RFTlastCommand);
+  if (serialMon) Serial.print("Repeating command: [");
+  if (serialMon) Serial.print(RFTlastCommand);
   rf.sendCommand(RFTlastCommand);
-  Serial.println("]\n");
+  if (serialMon) Serial.println("]\n");
 }
 
 void sendHighSpeed() {
-  Serial.println("sending high via RF...");
+  if (serialMon) Serial.println("sending high via RF...");
   rf.sendCommand(IthoHigh);
-  Serial.println("sending high done.");
+  if (serialMon) Serial.println("sending high done.");
 }
 
 void sendLowSpeed() {
-  Serial.println("sending low via RF ...");
+  if (serialMon) Serial.println("sending low via RF ...");
   rf.sendCommand(IthoLow);
-  Serial.println("sending low done.");
+  if (serialMon) Serial.println("sending low done.");
 }
 
 void sendMediumSpeed() {
-  Serial.println("sending medium via RF...");
+  if (serialMon) Serial.println("sending medium via RF...");
   rf.sendCommand(IthoMedium);
-  Serial.println("sending medium done.");
+  if (serialMon) Serial.println("sending medium done.");
 }
 
 void sendUpdate() {
@@ -196,13 +203,13 @@ void sendUpdate() {
   root.printTo(res);
 
   webSocket.broadcastTXT(res);
-  flashLed(2);
+  if (serialMon) Serial.println("currentState is updated at HomeBridge.\n");
+  //flashLed(2);
 }
 
 void setSpeedSetting(String setting) {
   if (setting != currentState) {
     currentState = setting;
-
     if (setting == "low"|| setting == "off") sendLowSpeed();
     else if (setting == "med") sendMediumSpeed();
     else if (setting == "max" || setting == "high") sendHighSpeed();
@@ -219,19 +226,19 @@ void updateCurrentStateFromRFCommand() {
     case IthoLow:
       currentState = "off";
       currentSpeed = 0;
+      sendUpdate();
       break;
     case IthoMedium:
       currentState = "medium";
       currentSpeed = 50;
+      sendUpdate();
       break;
     case IthoHigh:
       currentState = "high";
       currentSpeed = 100;
+      sendUpdate();
       break;
   }
-  Serial.print("currentState is now updated to : %s and currentSpeed is %u\r\n");
-  sendUpdate();
-  Serial.print("currentState is updated at HomeBridge.");
 }
 
 void showPacket() {
@@ -299,13 +306,14 @@ void showPacket() {
       Serial.print("leave\n");
       break;
   }
+  Serial.print("##### End of packet #####\n");
 }
 
 void togglePower(bool value) {
-  if (value)
-      adjustSpeed(currentSpeed);
+  if (value) adjustSpeed(currentSpeed);
   else {
-    currentSpeed = 100;
+    if (serialMon) Serial.println("Toggle Power to off\r\n");
+    currentSpeed = 0;
     setSpeedSetting("off");
   }
 }
@@ -313,14 +321,14 @@ void togglePower(bool value) {
 void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
   switch(type) {
     case WStype_DISCONNECTED:
-      Serial.printf("[%u] Disconnected!\r\n", num);
+      if (serialMon) Serial.printf("[%u] Disconnected!\r\n", num);
       break;
     case WStype_CONNECTED:
-      Serial.printf("[%u] Connected from url: %s\r\n", num, payload);
+      if (serialMon) Serial.printf("[%u] Connected from url: %s\r\n", num, payload);
       sendUpdate();
       break;
     case WStype_TEXT: {
-      Serial.printf("[%u] get Text: %s\r\n", num, payload);
+      if (serialMon) Serial.printf("[%u] get Text: %s\r\n", num, payload);
 
       DynamicJsonBuffer jsonBuffer;
       JsonObject& root = jsonBuffer.parseObject((char *)&payload[0]);
@@ -334,10 +342,10 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length
       break;
     }
     case WStype_BIN:
-      Serial.printf("[%u] get binary length: %u\r\n", num, length);
+      if (serialMon) Serial.printf("[%u] get binary length: %u\r\n", num, length);
       break;
     default:
-      Serial.printf("Invalid WStype [%d]\r\n", type);
+      if (serialMon) Serial.printf("Invalid WStype [%d]\r\n", type);
       break;
   }
 }
@@ -349,26 +357,30 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length
 
 void setupLED() {
     pinMode(LED_BUILTIN, OUTPUT);
-    digitalWrite(LED_BUILTIN, LedState);
 }
 
 void setupMDNS() {
   if (mdns.begin(accessoryName, WiFi.localIP())) {
-    Serial.println("MDNS responder started");
+    if (serialMon) Serial.println("MDNS responder started");
   }
 }
 
 void setupRF() {
   rf.init();
+  delay(100);
   rf.initReceive();
-  pinMode(ITHO_IRQ_PIN, INPUT);
-  attachInterrupt(ITHO_IRQ_PIN, ITHOinterrupt, RISING);
+  delay(100);
+  pinMode(ITHO_IRQ_PIN, INPUT_PULLUP);
+  attachInterrupt(ITHO_IRQ_PIN, ITHOinterrupt, CHANGE);
+  //rf.sendCommand(IthoJoin); //the ID inside ithoCC1101.cpp at this->outIthoPacket.deviceId2 is used!
+  //rf.sendCommand(IthoLeave); //the ID inside ithoCC1101.cpp at this->outIthoPacket.deviceId2 is used!
+  delay(100);
 }
 
 void setupSocketServer() {
   webSocket.begin();
   webSocket.onEvent(webSocketEvent);
-  Serial.println("Web socket server started on port 81");
+  if (serialMon) Serial.println("Web socket server started on port 81");
 }
 
 void setupWiFi(){
@@ -376,38 +388,35 @@ void setupWiFi(){
   WiFi.mode(WIFI_STA);
   WiFi.hostname(accessoryName);
   WiFi.begin(ssid, password);
+  if (serialMon) Serial.print("Connecting to WiFi");
   while (WiFi.status() != WL_CONNECTED) {
-    Serial.print(".");
+    if (serialMon) Serial.print(".");
     delay(500);
   }
-  Serial.println("");
-  Serial.print("Connected to ");
-  Serial.println(ssid);
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
+  if (serialMon) Serial.println("");
+  if (serialMon) Serial.print("Connected to ");
+  if (serialMon) Serial.println(ssid);
+  if (serialMon) Serial.print("IP address: ");
+  if (serialMon) Serial.println(WiFi.localIP());
 }
 
 void setup(void) {
-  delay(1000);
-  Serial.begin(115200, SERIAL_8N1, SERIAL_TX_ONLY);
-  Serial.println();
-  delay(500);
-  Serial.println("######  begin setup  ######");
-  setupLED();
+  if (serialMon) Serial.begin(115200, SERIAL_8N1, SERIAL_TX_ONLY);
+  if (serialMon) Serial.println("\n######  begin setup  ######");
+  if (ledOn) setupLED();
   setupRF();
   setupWiFi();
   setupMDNS();
   setupSocketServer();
-  Serial.println("######  setup done   ######");
-  delay(500);
+  if (serialMon) Serial.println("######  setup done   ######\n");
 }
 
 void loop(void) {
-  ledState();
+  if (ledOn) led();
   webSocket.loop();
   if (ITHOhasPacket) { // ITHOhasPacket is only true if the packet was send from the RFT with corresponding RTFid
     updateCurrentStateFromRFCommand();
-    showPacket();
+    if (serialMon) showPacket();
     if(repeater) repeatReceivedPacketCommand();
   }
   yield();

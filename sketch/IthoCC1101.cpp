@@ -41,14 +41,14 @@ IthoCC1101::IthoCC1101(uint8_t counter, uint8_t sendTries) : CC1101()
 	this->outIthoPacket.deviceId1[4] = 84;
 	this->outIthoPacket.deviceId1[5] = 204;
 	//
-	this->outIthoPacket.deviceId2[0] = 101;
-	this->outIthoPacket.deviceId2[1] = 89;
-	this->outIthoPacket.deviceId2[2] = 154;
-	this->outIthoPacket.deviceId2[3] = 153;
-	this->outIthoPacket.deviceId2[4] = 170;
-	this->outIthoPacket.deviceId2[5] = 105;
-	this->outIthoPacket.deviceId2[6] = 154;
-	this->outIthoPacket.deviceId2[7] = 86;
+  this->outIthoPacket.deviceId2[0] = 101;
+  this->outIthoPacket.deviceId2[1] = 89;
+  this->outIthoPacket.deviceId2[2] = 154;
+  this->outIthoPacket.deviceId2[3] = 153;
+  this->outIthoPacket.deviceId2[4] = 170;
+  this->outIthoPacket.deviceId2[5] = 105;
+  this->outIthoPacket.deviceId2[6] = 154;
+  this->outIthoPacket.deviceId2[7] = 86;
 } //IthoCC1101
 
 // default destructor
