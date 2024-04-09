@@ -141,7 +141,7 @@ void ITHOcheck() {
   }
 }
 
-void ITHOinterrupt() {
+void ICACHE_RAM_ATTR ITHOinterrupt() {
   ITHOticker.once_ms(10, ITHOcheck);
 }
 
