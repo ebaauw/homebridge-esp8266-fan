@@ -116,7 +116,7 @@ uint8_t findRFTlastCommand() {
   if ((RFTcommandpos == 1) && (RFTcommand[2] != IthoUnknown)) return 2;
   if ((RFTcommandpos == 2) && (RFTcommand[1] != IthoUnknown)) return 1;
   if ((RFTcommandpos == 2) && (RFTcommand[0] != IthoUnknown)) return 0;
-  return -1;
+  return 255;
 }
 
 void flashLed(int times){
@@ -177,7 +177,7 @@ void staChgTimeout() {
 void repeatReceivedPacketCommand() {
   ITHOhasPacket = false;
   uint8_t goodpos = findRFTlastCommand();
-  if (goodpos != -1)  RFTlastCommand = RFTcommand[goodpos];
+  if (goodpos != 255)  RFTlastCommand = RFTcommand[goodpos];
   else                RFTlastCommand = IthoUnknown;
   if (serialMon) Serial.print("Repeating command: [");
   if (serialMon) Serial.print(RFTlastCommand);
@@ -236,7 +236,7 @@ void setSpeedSetting(String setting) {
 void updateCurrentStateFromRFCommand() {
   ITHOhasPacket = false;
   uint8_t goodpos = findRFTlastCommand();
-  if (goodpos != -1)  RFTlastCommand = RFTcommand[goodpos];
+  if (goodpos != 255)  RFTlastCommand = RFTcommand[goodpos];
   else                RFTlastCommand = IthoUnknown;
   switch (RFTlastCommand) {
     case IthoLow:
@@ -260,7 +260,7 @@ void updateCurrentStateFromRFCommand() {
 void showPacket() {
   ITHOhasPacket = false;
   uint8_t goodpos = findRFTlastCommand();
-  if (goodpos != -1)  RFTlastCommand = RFTcommand[goodpos];
+  if (goodpos != 255)  RFTlastCommand = RFTcommand[goodpos];
   else                RFTlastCommand = IthoUnknown;
   //show data
   Serial.print(F("RFT Current Pos: "));
