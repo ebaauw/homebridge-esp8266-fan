@@ -33,7 +33,8 @@ Ticker ITHOticker;
 WebSocketsServer webSocket = WebSocketsServer(81);
 
 // This constant is used to filter out RFT device packets, only the packets with this ID are listened to.
-const uint8_t RFTid[] = {0x66, 0xa9, 0x6a, 0xa5, 0xa9, 0xa9, 0x9a, 0x56}; 
+const uint8_t RFTid1[] = {0x69, 0x6a, 0x5a, 0xa9, 0x96, 0x69, 0x9a, 0x56}; 
+const uint8_t RFTid2[] = {0x66, 0x5a, 0x66, 0x59, 0x99, 0x69, 0x9a, 0x56};
 
 // Replace with your network credentials
 const char* ssid = "*** fill in your own SSID ***";
@@ -133,7 +134,7 @@ void ITHOcheck() {
     bool chk;
     //if (showEveryPacket) chk = true;
     //else chk = rf.checkID(RFTid);
-    chk = rf.checkID(RFTid);
+    chk = rf.checkID(RFTid1) || rf.checkID(RFTid2);
     RFTidChk[RFTcommandpos]   = chk;
     if (((cmd != IthoUnknown) && chk) || showEveryPacket) {  // only act on good cmd and correct RFTid.
       ITHOhasPacket = true;
@@ -364,6 +365,9 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length
     case WStype_BIN:
       if (serialMon) Serial.printf("[%u] get binary length: %u\r\n", num, length);
       break;
+    case WStype_PING:
+    case WStype_PONG:
+      break;
     default:
       if (serialMon) Serial.printf("Invalid WStype [%d]\r\n", type);
       break;
@@ -381,6 +385,9 @@ void setupLED() {
 
 void setupMDNS() {
   if (mdns.begin(accessoryName, WiFi.localIP())) {
+    mdns.addService("oznu-platform", "tcp", 81);
+    mdns.addServiceTxt("oznu-platform", "tcp", "type", "fan");
+    mdns.addServiceTxt("oznu-platform", "tcp", "mac", WiFi.macAddress());
     if (serialMon) Serial.println("MDNS responder started");
   }
 }
@@ -426,8 +433,8 @@ void setup(void) {
   if (ledOn) setupLED();
   setupRF();
   setupWiFi();
-  setupMDNS();
   setupSocketServer();
+  setupMDNS();
   if (serialMon) Serial.println("######  setup done   ######\n");
 }
 
@@ -440,5 +447,6 @@ void loop(void) {
     if(repeater) repeatReceivedPacketCommand();
   }
   staChgTimeout();
+  mdns.update();
   yield();
 }
