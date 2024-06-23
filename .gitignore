@@ -2,3 +2,4 @@
 #########
 # **/*-prod this matches all file or directory anywhere
 **/*-prod
+node_modules
